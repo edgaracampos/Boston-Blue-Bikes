@@ -260,7 +260,7 @@ def main():
 
         axs[0].pie(usertype['duration (min)'], labels=counts['usertype'], autopct='%1.1f%%',
                 startangle=90, colors=colors)
-        axs[0].set_title('Distribution of Total Ride Time (in minutes) by User Type')
+        axs[0].set_title('Distribution of Total Ride Time by User Type')
 
         axs[1].pie(usertype['distance (mi)'], labels=counts['usertype'], autopct='%1.1f%%', startangle=90,colors=colors)
         axs[1].set_title('Distribution of Total Ride Distance fby User Type') 
