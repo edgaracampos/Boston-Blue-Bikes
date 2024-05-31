@@ -1,11 +1,20 @@
+"""
+Name: Edgar Campos
+CS230: Section 1
+Data: Boston Blue Bikes
+URL:
+
+"""
+# Imports
 import pandas as pd 
 import numpy as np
 import matplotlib.pyplot as plt 
-from matplotlib.lines import Line2D 
+#import seaborn as sns
 import streamlit as st
 from math import radians, sin, cos, sqrt, atan2
-import folium 
-
+import pydeck as pdk
+#import mapbox as mb
+from matplotlib.lines import Line2D 
 
 trips_file = '201501-hubway-tripdata.csv'
 bluebikes_image = 'https://facilities.northeastern.edu/wp-content/uploads/2021/12/Bluebikes-Pic-4-1860x970.jpg'
@@ -13,11 +22,14 @@ bluebikes_image2 = 'https://img.mlbstatic.com/mlb-images/image/private/t_16x9/t_
 research_center = 'edgarscientific.png'
 advertisement = 'edgarbikead.png'
 
+# Function to load in the dataset
 def load_data(file_name):
     df = pd.read_csv(file_name)
     return df
 
+# Function used to clean up our user dataset
 def clean_trips(trip_data):
+
     # Remove \N values in data
     to_replace = {'\\N': np.nan}
     trips = trip_data.replace(to_replace)
@@ -37,7 +49,7 @@ def clean_trips(trip_data):
                                                                      row['start station longitude'],
                                                                      row['end station latitude'],
                                                                      row['end station longitude'],units='km'), axis=1)
-    
+                                                                     
     # Convert starttime to date and time format
     trips[['date','time']] = trips['starttime'].str.split(pat=' ',n=1,expand=True)
     trips['date'] = pd.to_datetime(trips['date'])
@@ -48,6 +60,7 @@ def clean_trips(trip_data):
     # Convert trip duration from seconds to minutes
     trips['duration (min)'] = trips['tripduration'] / 60
 
+    # Remove unused columns
     to_drop = ['birth year', 'start station id', 'end station id', 'bikeid', 'gender', 
                'tripduration', 'minute', 'second', 'starttime', 'stoptime']
 
@@ -55,7 +68,9 @@ def clean_trips(trip_data):
     
     return trips
 
+# Function to clean data on station locations
 def clean_stations(trip_data):
+
     # Create a DataFrame of all unique start and end stations
     start = trip_data[['start station name',
                        'start station latitude',
@@ -64,12 +79,13 @@ def clean_stations(trip_data):
     end = trip_data[['end station name',
                      'end station latitude',
                      'end station longitude']].drop_duplicates()
+    
     # Create a dict with all the column names and what we want in the final DataFrame
     column_Rename = {
-        'start station name': 'station name',
+        'start station name': 'station_name',
         'start station latitude': 'lat',
         'start station longitude': 'lon',
-        'end station name': 'station name',
+        'end station name': 'station_name',
         'end station latitude': 'lat',
         'end station longitude': 'lon'
     }
@@ -80,7 +96,7 @@ def clean_stations(trip_data):
 
     # Combine two DataFrames and remove duplicates
     stations = pd.concat([start,end]).drop_duplicates()
-    stations = stations.sort_values(by='station name').reset_index(drop=True)
+    stations = stations.sort_values(by='station_name').reset_index(drop=True)
 
     return stations
 
@@ -106,7 +122,38 @@ def calc_distance(lat1,lon1,lat2,lon2,units='mi'):
 
     return distance
 
+# Function used to calculate trip distance between two station's coordinates
+def trip_distance(starting,ending,df,units='mi'):
+
+    lat1 = df.loc[(df['station_name']==starting),'lat'].values[0]
+    lon1 = df.loc[(df['station_name']==starting),'lon'].values[0]
+    lat2 = df.loc[(df['station_name']==ending),'lat'].values[0]
+    lon2 = df.loc[(df['station_name']==ending),'lon'].values[0]
+
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+
+    # Haversine formula
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat / 2)**2 + cos(lat1) * cos(lat2) * sin(dlon / 2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+    # Radius of the Earth in miles and kilometers (change if needed)
+    if units == 'mi':
+        R = 3958.8
+    elif units == 'km':
+        R = 6371.0
+    else:
+        return ValueError('Invalid unit type')
+    
+    # Calculate the distance
+    distance = R * c
+
+    return distance
+
+# Function used to create a regression model to find the average time a person takes to travel a distance
 def simple_regression(x, y):
+
     # Number of observations/points
     n = np.size(x)
     
@@ -123,6 +170,105 @@ def simple_regression(x, y):
     b_0 = m_y - b_1*m_x
     
     return (b_0, b_1) 
+
+def station_map(df):
+    # Create a subheader for the station map
+    st.subheader(':blue[Locations of Blue Bike Stations]')
+
+    # Sets the default view
+    view_state = pdk.ViewState(
+        latitude = df['lat'].mean(),
+        longitude = df['lon'].mean(),
+        zoom = 12
+    )
+
+    # Sets the station layer on top of the map
+    station_layer = pdk.Layer(
+        'ScatterplotLayer',
+        data=df,
+        get_position='[lon, lat]',
+        get_radius='scaled_radius',
+        radius_scale = 2,
+        radius_min_pixels= 5,
+        radius_max_pixels = 15,
+        get_color=[0,0,255],
+        pickable=True
+    )
+
+    # Create the tooltip to each station
+    tool_tip = {
+        "html": "Station Name:<br/> <b>{station_name}</b> ",
+        "style": { "backgroundColor": 'lightblue',"color": "white"}
+    }
+
+    # Create the map setings
+    map = pdk.Deck(
+        map_style='mapbox://styles/mapbox/light-v9',
+        initial_view_state=view_state,
+        layers=[station_layer],
+        tooltip=tool_tip
+    )
+
+    # Create the map in streamlit
+    st.pydeck_chart(map)
+
+
+def trip_map(starting, ending, df):
+
+    df_trip = df.loc[(df['station_name']==starting)|(df['station_name']==ending)]
+
+    if len(df_trip) == 2:
+        start_coords = df_trip[df_trip['station_name'] == starting][['lon', 'lat']].values[0]
+        end_coords = df_trip[df_trip['station_name'] == ending][['lon', 'lat']].values[0]
+        line_data = pd.DataFrame({
+            'start_lon': [start_coords[0]],
+            'start_lat': [start_coords[1]],
+            'end_lon': [end_coords[0]],
+            'end_lat': [end_coords[1]]
+        })
+    
+    trip_state = pdk.ViewState(
+        latitude = df_trip['lat'].mean(),
+        longitude = df_trip['lon'].mean(),
+        zoom = 12.5
+    )
+
+    trip_layer = pdk.Layer(
+            'LineLayer',
+            data=line_data,
+            get_source_position='[start_lon, start_lat]',
+            get_target_position='[end_lon, end_lat]',
+            get_color=[0,0,255],
+            get_width=5,
+            pickable=False
+        )
+
+    station_layer = pdk.Layer(
+        'ScatterplotLayer',
+        data=df_trip,
+        get_position='[lon, lat]',
+        get_radius='scaled_radius',
+        radius_scale = 2,
+        radius_min_pixels= 5,
+        radius_max_pixels = 15,
+        get_color=[0,0,255],
+        pickable=True
+    )
+
+    tool_tip = {
+        "html": "Station Name:<br/> <b>{station_name}</b> ",
+        "style": { "backgroundColor": 'lightblue',"color": "white"}
+    }
+
+    trip_map = pdk.Deck(
+        map_style='mapbox://styles/mapbox/light-v9',
+        initial_view_state=trip_state,
+        layers=[station_layer,trip_layer],
+        tooltip=tool_tip
+    )
+    
+    st.pydeck_chart(trip_map)
+
 
 def main():
     # Configure website
@@ -167,19 +313,8 @@ def main():
         st.markdown(bluebike_description)
         
         # Create a map with all the bike stations
-        map_center = [df_stations['lat'].mean(), df_stations['lon'].mean()]
-        stations_map = folium.Map(location=map_center, zoom_start=13)
+        station_map(df_stations)
         
-        for index, row in df_stations.iterrows():
-            folium.Marker(
-                location=[row['lat'],row['lon']],
-                popup=row['station name'],
-                icon = folium.Icon(color='darkblue')
-            ).add_to(stations_map)
-        
-        map_html = stations_map.get_root().render()
-        st.subheader(':blue[Locations of Blue Bike Stations]')
-        st.components.v1.html(map_html,height=600,scrolling=True)
         stations_number = df_stations.shape[0]
         st.markdown(f'The {stations_number} different stations located around Boston mostly reside in the Cambridge area.'
                     ' The Blue Bike stations follow along the Charles River, starting at around Charlestown/North End '
@@ -191,29 +326,14 @@ def main():
         st.markdown('Using our trip planner tool, you can easily calculate how far your next commute will be along'
                      ' with an accurate estimated time of arrival (ETA) based on user data')
         
-        usertrip = df_stations
-        start = st.selectbox('Start location',usertrip['station name'])
-        end = st.selectbox('End location',usertrip['station name'])
+        start = st.selectbox('Start location',df_stations['station_name'])
+        end = st.selectbox('End location',df_stations['station_name'])
 
-        start_station = usertrip.loc[usertrip['station name']==start][['lat','lon']].values[0]
-        end_station = usertrip.loc[usertrip['station name']==end][['lat','lon']].values[0]
-        
-        trip_center = [(start_station[0]+end_station[0])/2, (start_station[1]+end_station[1])/2]
-        trip_map = folium.Map(location=trip_center, zoom_start = 13)
-        trip_length = calc_distance(start_station[0],start_station[1],end_station[0],end_station[1])
+        trip_map(start,end,df_stations)
 
-        for index, row in df_stations.iterrows():
-            folium.Marker(
-                location=[row['lat'],row['lon']],
-                popup=row['station name'],
-                icon = folium.Icon(color='darkblue')
-            ).add_to(trip_map)
+        trip_length = trip_distance(start,end,df_stations)
 
-        folium.PolyLine(
-                locations=[start_station,end_station],
-                colors='blue',
-            ).add_to(trip_map)
-            
+
         trip_b0,trip_b1 = simple_regression(x=df_trips['distance (mi)'],y=df_trips['duration (min)'])
         
         if trip_length == 0:
@@ -224,8 +344,7 @@ def main():
         st.markdown(f'Your trip is {trip_length:.3f} miles long')
         st.markdown(f'Your ETA is {eta:.2f} minutes')
         
-        trip_html = trip_map.get_root().render()
-        st.components.v1.html(trip_html,height=600,scrolling=True)
+
 
     with tab3:
         st.header(':blue[Blue Bike User Data]')
@@ -260,7 +379,7 @@ def main():
 
         axs[0].pie(usertype['duration (min)'], labels=counts['usertype'], autopct='%1.1f%%',
                 startangle=90, colors=colors)
-        axs[0].set_title('Distribution of Total Ride Time by User Type')
+        axs[0].set_title('Distribution of Total Ride Time (in minutes) by User Type')
 
         axs[1].pie(usertype['distance (mi)'], labels=counts['usertype'], autopct='%1.1f%%', startangle=90,colors=colors)
         axs[1].set_title('Distribution of Total Ride Distance fby User Type') 
