@@ -1,5 +1,7 @@
 matplotlib
-folium
+pydeck
 pandas
 streamlit
 numpy
+seaborn
+mapbox
