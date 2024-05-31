@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import streamlit as st
 from math import radians, sin, cos, sqrt, atan2
 import pydeck as pdk
-#import mapbox as mb
+#Simport mapbox as mb
 from matplotlib.lines import Line2D 
 
 trips_file = '201501-hubway-tripdata.csv'
@@ -226,48 +226,50 @@ def trip_map(starting, ending, df):
             'end_lon': [end_coords[0]],
             'end_lat': [end_coords[1]]
         })
-    
-    trip_state = pdk.ViewState(
-        latitude = df_trip['lat'].mean(),
-        longitude = df_trip['lon'].mean(),
-        zoom = 12.5
-    )
 
-    trip_layer = pdk.Layer(
-            'LineLayer',
-            data=line_data,
-            get_source_position='[start_lon, start_lat]',
-            get_target_position='[end_lon, end_lat]',
-            get_color=[0,0,255],
-            get_width=5,
-            pickable=False
+        trip_layer = pdk.Layer(
+                'LineLayer',
+                data=line_data,
+                get_source_position='[start_lon, start_lat]',
+                get_target_position='[end_lon, end_lat]',
+                get_color=[0,0,255],
+                get_width=5,
+                pickable=False
+            )
+    
+        trip_state = pdk.ViewState(
+            latitude = df_trip['lat'].mean(),
+            longitude = df_trip['lon'].mean(),
+            zoom = 12.5
         )
 
-    station_layer = pdk.Layer(
-        'ScatterplotLayer',
-        data=df_trip,
-        get_position='[lon, lat]',
-        get_radius='scaled_radius',
-        radius_scale = 2,
-        radius_min_pixels= 5,
-        radius_max_pixels = 15,
-        get_color=[0,0,255],
-        pickable=True
-    )
+        station_layer = pdk.Layer(
+            'ScatterplotLayer',
+            data=df_trip,
+            get_position='[lon, lat]',
+            get_radius='scaled_radius',
+            radius_scale = 2,
+            radius_min_pixels= 5,
+            radius_max_pixels = 15,
+            get_color=[0,0,255],
+            pickable=True
+        )
 
-    tool_tip = {
-        "html": "Station Name:<br/> <b>{station_name}</b> ",
-        "style": { "backgroundColor": 'lightblue',"color": "white"}
-    }
+        tool_tip = {
+            "html": "Station Name:<br/> <b>{station_name}</b> ",
+            "style": { "backgroundColor": 'lightblue',"color": "white"}
+        }
 
-    trip_map = pdk.Deck(
-        map_style='mapbox://styles/mapbox/light-v9',
-        initial_view_state=trip_state,
-        layers=[station_layer,trip_layer],
-        tooltip=tool_tip
-    )
-    
-    st.pydeck_chart(trip_map)
+        trip_map = pdk.Deck(
+            map_style='mapbox://styles/mapbox/light-v9',
+            initial_view_state=trip_state,
+            layers=[station_layer,trip_layer],
+            tooltip=tool_tip
+        )
+        
+        st.pydeck_chart(trip_map)
+    else:
+        station_map(df)
 
 
 def main():
